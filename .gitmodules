@@ -1,0 +1,4 @@
+[submodule "agaura/public"]
+	path = agaura/public
+	url = https://github.com/agaura/agaura.github.io.git
+	branch = main
