@@ -1,7 +1,7 @@
 baseURL = "https://agaura.github.io"
 languageCode = "en-us"
 title = "Alexander Gaura"
-copyright = "TH ↔ Þ" # lol using this for other functionality
+copyright = "TH ↔ Þ" # lol using this for other functionality, maybe want it like this one day: ꧁ TH ↔ Þ ꧂
 googleAnalytics = "G-BBWS173BMQ"
 
 # paginate decides the number of the newest posts

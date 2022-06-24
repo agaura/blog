@@ -6,7 +6,11 @@ categories: [Projects]
 tags: [shader, dither]
 ---
 
-This is the shader. 
+# Introduction
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; This shader displays images with a portion of the color wheel being impossible to show, instead being displayed as noise being dithered so as to approximate that color. For more information, see [here](https://agaura.github.io/okhslapp/).
+
+# Shader
 
 <html>
  <!-- D3.js -->
@@ -29,7 +33,7 @@ This is the shader.
             <input id="uploadImage" type="file" name="myPhoto" onchange="PreviewImage();" />
             <i class="fa fa-cloud-upload"></i>  Upload
         </label>
-    </div>    <div align="center" style="padding-top: 50px">
+    </div>    <div align="center" style="padding-top: 20px">
         <canvas id="canvas"></canvas>
         <!--
 for most samples webgl-utils only provides shader compiling/linking and
@@ -483,6 +487,25 @@ bool inDither( float h, float antiHue, float antiRad) {
 	(((h - 1.0f > antiHue - antiRad) && (h - 1.0f < antiHue + antiRad))) ||
 	(((1.0f + h > antiHue - antiRad) && (1.0f + h < antiHue + antiRad)));
 }
+float dither( float h, float r, float antiHue, float antiRad) {
+	float rightBound = antiHue - antiRad;
+    if (rightBound < -0.5f) rightBound = rightBound + 1.0f;
+    float leftBound = antiHue + antiRad;
+    if (leftBound > 0.5f) leftBound = leftBound - 1.0f;
+	if ((h > antiHue - antiRad) && (h < antiHue + antiRad))
+        if (((h - (antiHue - antiRad)) / (2.0f * antiRad)) < r)
+            h = rightBound;
+        else h = leftBound;
+    else if ((h - 1.0f > antiHue - antiRad) && (h - 1.0f < antiHue + antiRad))
+        if (((h - 1.0f - (antiHue - antiRad)) / (2.0f * antiRad)) < r)
+            h = rightBound;
+        else h = leftBound;
+    else if ((1.0f + h > antiHue - antiRad) && (1.0f + h < antiHue + antiRad))
+        if (((1.0f + h - (antiHue - antiRad)) / (2.0f * antiRad)) < r)
+            h = rightBound;
+        else h = leftBound;
+	return h;
+}
 uniform sampler2D u_image;
 uniform float time;
 uniform float antiHue;
@@ -498,29 +521,17 @@ out vec4 outColor;void main()
     vec3 hsl = srgb_to_okhsl(tex.rgb);
     float h = hsl.x;
     float s = hsl.y;
+	float temp = h;
 	if (inDither(h, antiHue, antiRad)) {
 		uv = floor(uv*res)/res;
-		h = srgb_to_okhsl(texture(u_image, uv).rgb).x;
+		temp = srgb_to_okhsl(texture(u_image, uv).rgb).x;
+		if ((uv.x == 0.0) && (uv.y == 0.0)) h = atan(1.0, 1.0)/(2.0*M_PI);
+		if (inDither(temp, antiHue, antiRad)) h = temp;
 		}
     if (s > 1.0) s = 1.0;
     float r = rand(vec2(uv.x, iTime));
     r = rand(vec2(r, uv.y));
-    float rightBound = antiHue - antiRad;
-    if (rightBound < -0.5f) rightBound = rightBound + 1.0f;
-    float leftBound = antiHue + antiRad;
-    if (leftBound > 0.5f) leftBound = leftBound - 1.0f;
-	if ((h > antiHue - antiRad) && (h < antiHue + antiRad))
-        if (((h - (antiHue - antiRad)) / (2.0f * antiRad)) < r)
-            h = rightBound;
-        else h = leftBound;
-    else if ((h - 1.0f > antiHue - antiRad) && (h - 1.0f < antiHue + antiRad))
-        if (((h - 1.0f - (antiHue - antiRad)) / (2.0f * antiRad)) < r)
-            h = rightBound;
-        else h = leftBound;
-    else if ((1.0f + h > antiHue - antiRad) && (1.0f + h < antiHue + antiRad))
-        if (((1.0f + h - (antiHue - antiRad)) / (2.0f * antiRad)) < r)
-            h = rightBound;
-        else h = leftBound;    //vec3 col = hsl2rgb(vec3(h, s, hsl.z));
+	h = dither(h, r, antiHue, antiRad);
     vec3 col = okhsl_to_srgb(vec3(h, s, hsl.z));
 	col = s > 1.0 ? vec3(0.0) : col;
     outColor = vec4(col,tex.w);
@@ -534,6 +545,12 @@ out vec4 outColor;void main()
             [vertexShaderSource, fragmentShaderSource]);        // look up where the vertex data needs to go.
         var positionAttributeLocation = gl.getAttribLocation(program, "a_position");
         var texCoordAttributeLocation = gl.getAttribLocation(program, "a_texCoord");
+		var locs = {
+        'time': gl.getUniformLocation(program, "time"),
+        'hue': gl.getUniformLocation(program, "antiHue"),
+        'rad': gl.getUniformLocation(program, "antiRad"),
+        'res': gl.getUniformLocation(program, "res")
+    };
         var timeLocation = gl.getUniformLocation(program, "time");
         var hueLocation = gl.getUniformLocation(program, "antiHue");
         var radLocation = gl.getUniformLocation(program, "antiRad");
@@ -550,7 +567,7 @@ out vec4 outColor;void main()
             }
             return false;
         }
-		function render(time) {
+		function firstRender(time) {
             time = time || 0;            // lookup uniforms
             var resolutionLocation = gl.getUniformLocation(program, "u_resolution");
             var imageLocation = gl.getUniformLocation(program, "u_image");
@@ -561,13 +578,8 @@ out vec4 outColor;void main()
             var positionBuffer = gl.createBuffer();            // Turn on the attribute
             gl.enableVertexAttribArray(positionAttributeLocation);            // Bind it to ARRAY_BUFFER (think of it as ARRAY_BUFFER = positionBuffer)
             gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);            // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
-            var size = 2;          // 2 components per iteration
-            var type = gl.FLOAT;   // the data is 32bit floats
-            var normalize = false; // don't normalize the data
-            var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next position
-            var offset = 0;        // start at the beginning of the buffer
             gl.vertexAttribPointer(
-                positionAttributeLocation, size, type, normalize, stride, offset);            // provide texture coordinates for the rectangle.
+                positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);            // provide texture coordinates for the rectangle.
             var texCoordBuffer = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
             gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -579,53 +591,44 @@ out vec4 outColor;void main()
                 1.0, 1.0,
             ]), gl.STATIC_DRAW);            // Turn on the attribute
             gl.enableVertexAttribArray(texCoordAttributeLocation);            // Tell the attribute how to get data out of texCoordBuffer (ARRAY_BUFFER)
-            var size = 2;          // 2 components per iteration
-            var type = gl.FLOAT;   // the data is 32bit floats
-            var normalize = false; // don't normalize the data
-            var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next position
-            var offset = 0;        // start at the beginning of the buffer
             gl.vertexAttribPointer(
-                texCoordAttributeLocation, size, type, normalize, stride, offset);            // Create a texture.
+                texCoordAttributeLocation, 2, gl.FLOAT, false, 0, 0);            // Create a texture.
             var texture = gl.createTexture();            // make unit 0 the active texture uint
             // (ie, the unit all other texture commands will affect
-            gl.activeTexture(gl.TEXTURE0 + 0);            // Bind it to texture unit 0' 2D bind point
             gl.bindTexture(gl.TEXTURE_2D, texture);            // Set the parameters so we don't need mips and so we're not filtering
             // and we don't repeat
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);            // Upload the image into the texture.
-            var mipLevel = 0;               // the largest mip
-            var internalFormat = gl.RGBA;   // format we want in the texture
-            var srcFormat = gl.RGBA;        // format of data we are supplying
-            var srcType = gl.UNSIGNED_BYTE; // type of data we are supplying
             gl.texImage2D(gl.TEXTURE_2D,
-                mipLevel,
-                internalFormat,
-                srcFormat,
-                srcType,
+                0,
+                gl.RGBA,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
                 image);
 			resizeCanvas(image);            // Tell WebGL how to convert from clip space to pixels
             gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);            // Clear the canvas
-            gl.clearColor(0, 0, 0, 0);
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);            // Tell it to use our program (pair of shaders)
             gl.useProgram(program);            // Bind the attribute/buffer set we want.
-            gl.bindVertexArray(vao);            // Pass in the canvas resolution so we can convert from
             // pixels to clipspace in the shader
             gl.uniform2f(resolutionLocation, image.width, image.height);            // Tell the shader to get the texture from texture unit 0
             gl.uniform1i(imageLocation, 0);            // Update the time
-            gl.uniform1f(timeLocation, time * 0.001);            gl.uniform1f(hueLocation, sliderFill.value());
-            gl.uniform1f(radLocation, sliderFill2.value() / 2.0);
-			gl.uniform2f(resLocation, image.width*Math.pow(1 - sliderFill3.value(), 4) + 1,image.height*Math.pow(1 - sliderFill3.value(), 4) + 1);
+            gl.uniform1f(locs.time, time * 0.001);
+			gl.uniform1f(locs.hue, sliderFill.value());
+            gl.uniform1f(locs.rad, sliderFill2.value() / 2.0);
+			gl.uniform2f(locs.res, image.width*Math.pow(1 - sliderFill3.value(), 4) + 1,image.height*Math.pow(1 - sliderFill3.value(), 4) + 1);
             // in setRectangle puts data in the position buffer
             gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);            // Set a rectangle the same size as the image.
             setRectangle(gl, 0, 0, image.width, image.height);            // Draw the rectangle.
-            var primitiveType = gl.TRIANGLES;
-            var offset = 0;
-            var count = 6;
-            gl.drawArrays(primitiveType, offset, count);
-			if(!toggle) requestAnimationFrame(render);
-        }        function setRectangle(gl, x, y, width, height) {
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+		function render(time) {
+        	time = time || 0;
+        	gl.uniform1f(locs.time, time * 0.001);
+        	gl.uniform1f(locs.hue, sliderFill.value());
+        	gl.uniform1f(locs.rad, sliderFill2.value() / 2.0);
+			gl.uniform2f(locs.res, image.width*Math.pow(1 - sliderFill3.value(), 4) + 1,image.height*Math.pow(1 - sliderFill3.value(), 4) + 1);
+        	gl.drawArrays(gl.TRIANGLES, 0, 6);
+        	if (!toggle) requestAnimationFrame(render);
+    	}
+		function setRectangle(gl, x, y, width, height) {
             var x1 = x;
             var x2 = x + width;
             var y1 = y;
@@ -646,7 +649,7 @@ out vec4 outColor;void main()
                 image.src = oFREvent.target.result;
             };
 			image.onload = function () {
-                render();
+                firstRender();
 			};
         }
 		function componentToHex(c) {
@@ -720,7 +723,7 @@ out vec4 outColor;void main()
             .sliderBottom()
             .min(d3.min(data))
             .max(d3.max(data))
-            .width(300)
+            .width(Math.min(300,screen.width*0.55))
             .tickFormat(d3.format('.0'))
             .ticks(5)
             .default(0.7)
@@ -742,7 +745,7 @@ out vec4 outColor;void main()
         var gFill = d3
             .select('div#slider-fill')
             .append('svg')
-            .attr('width', 350)
+            .attr('width', Math.min(350,screen.width*0.7))
             .attr('height', 65)
             .append('g')
             .attr('transform', 'translate(30,30)')
@@ -752,7 +755,7 @@ out vec4 outColor;void main()
             .sliderBottom()
             .min(d3.min(data))
             .max(d3.max(data))
-            .width(300)
+            .width(Math.min(300,screen.width*0.55))
             .tickFormat(d3.format('.0%'))
             .ticks(5)
             .default(0.4)
@@ -781,7 +784,7 @@ out vec4 outColor;void main()
 		var gFill2 = d3
             .select('div#slider-fill2')
             .append('svg')
-            .attr('width', 350)
+            .attr('width', Math.min(350,screen.width*0.7))
             .attr('height', 65)
             .append('g')
             .attr('transform', 'translate(30,30)')
@@ -791,7 +794,7 @@ out vec4 outColor;void main()
             .sliderBottom()
             .min(d3.min(data))
             .max(d3.max(data))
-            .width(300)
+            .width(Math.min(300,screen.width*0.55))
             .tickFormat(d3.format('.0%'))
             .ticks(5)
             .default(0.0)
@@ -808,12 +811,16 @@ out vec4 outColor;void main()
         var gFill3 = d3
             .select('div#slider-fill3')
             .append('svg')
-            .attr('width', 350)
+            .attr('width', Math.min(350,screen.width*0.7))
             .attr('height', 65)
             .append('g')
             .attr('transform', 'translate(30,30)')
 			.attr('fill', '#aaaaaa');
         gFill3.call(sliderFill3);
+		gFill.select('.handle')
+			.attr("fill", sliderColor(sliderFill.value(), sliderFill2.value(), colors));
+		gFill2.select('.handle')
+			.attr("fill", grays[parseInt(sliderFill2.value() * 255)]);
 		window.onload=function(){
   			btn.addEventListener('click', function handleClick() {
 				toggle = !toggle;
@@ -821,17 +828,43 @@ out vec4 outColor;void main()
 				else btn.textContent = '⏸';
 				render();
 			});
-			image.src = "/flower.jpeg";
-			image.onload = function () {
-                render();
-			};
-			render();
 		}
-		gFill.select('.handle')
-			.attr("fill", sliderColor(sliderFill.value(), sliderFill2.value(), colors));
-		gFill2.select('.handle')
-			.attr("fill", grays[parseInt(sliderFill2.value() * 255)]);
+	image.src = "/flower.jpeg";
+	image.onload = function() {firstRender();}
 		</script>
 </html>
 
-If viewing on mobile, make sure to enable WebGL 2.0.
+# Controls
+
+* ▶️/⏸ Button: Controls time, causes noisiness to evolve over time and smoothens dither
+* <html>
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+        style="position:relative; top:2px;">
+        <linearGradient id="Gradient2" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="#d60071" />
+            <stop offset="20%" stop-color="#c04e00" />
+            <stop offset="30%" stop-color="#917200" />
+            <stop id='example' offset="45%" stop-color="#468a00" />
+            <stop offset="50%" stop-color="#008a79" />
+            <stop offset="60%" stop-color="#0083a8" />
+            <stop offset="70%" stop-color="#4b5dff" />
+            <stop offset="100%" stop-color="#b200df" />
+        </linearGradient>
+        <path fill="url(#Gradient2)"
+            d="M12 0c-4.87 7.197-8 11.699-8 16.075 0 4.378 3.579 7.925 8 7.925s8-3.547 8-7.925c0-4.376-3.13-8.878-8-16.075zm.462 20.471c2.56-1.049 4.124-4.889 3.021-8.853 3.798 4.909.754 9.393-3.021 8.853z" /></svg>
+            </html> Slider: Controls the annihilated hue. Runs counterclockwise starting from the rightmost point of the color wheel (red/hot pink)
+* <html>
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+        style="position:relative; top:2px;">
+        <path fill='gray' d="M6 11v-4l-6 5 6 5v-4h12v4l6-5-6-5v4z" /></svg>
+            </html> Slider: Controls with width of the sector being annihilated, where the percentage corresponding to the percentage of the color wheel within that sector, centered around the annihilated hue as defined by the above slider
+* <html>
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+        style="position:relative; top:2px;">
+        <path fill='gray'
+            d="M12 0l-11 6v12.131l11 5.869 11-5.869v-12.066l-11-6.065zm9 11.623l-3 1.569v-3.26l3-1.601v3.292zm-13-.654l3 1.625v3.186l-3-1.614v-3.197zm.9-1.799l2.986-1.603 3.132 1.688-3.014 1.608-3.104-1.693zm4.1 3.43l3-1.6v3.238l-3 1.569v-3.207zm4.138-4.475l-3.139-1.691 2.801-1.503 3.11 1.715-2.772 1.479zm-2.424-4.345l-2.825 1.517-2.728-1.47 2.834-1.546 2.719 1.499zm-7.649 1.19l2.711 1.46-2.973 1.596-2.67-1.456 2.932-1.6zm-1.065 4.908v3.204l-3-1.636v-3.216l3 1.648zm-3 3.843l3 1.636v3.185l-3-1.611v-3.21zm5 5.888v-3.169l3 1.614v3.146l-3-1.591zm5-1.545l3-1.569v3.104l-3 1.601v-3.136zm5 .468v-3.083l3-1.569v3.051l-3 1.601z" /></svg>
+            </html> Slider: Changes the size of the resolution of the dithered annihilated colors
+
+# Discussion
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; This shader more-or-less functions as a fun little artistic thingy. The effect works best on images with large regions that are nearly monochromatic and that contrast a lot with their environment, and whose color is saturated. Realistically, this means things like flowers, auroras, neon signs, etc. A lot of digital art tends to be made this way as well, I would recommend trying out some of your favorite images and seeing what happens. Have fun! :)
